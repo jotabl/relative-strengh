@@ -77,7 +77,7 @@ def tg_send(text: str):
     try:
         url  = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
         data = json.dumps({"chat_id": TG_CHAT_ID, "text": text,
-                           "parse_mode": "HTML", "disable_web_page_preview": True}).encode()
+                           "disable_web_page_preview": True}).encode()
         req  = urllib.request.Request(url, data=data,
                                       headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=10)
@@ -92,37 +92,39 @@ def tg_send(text: str):
 def tg_entry(ticker, price, key, entry, target, stop, rs, rr, qty, equity):
     gain_pct = (target - entry) / entry * 100
     risk_pct = (entry - stop)  / entry * 100
-    msg = (
-        f"🟢 <b>ENTRADA — {ticker}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"💹 Precio actual:  <b>${price:.2f}</b>\n"
-        f"🎯 Nivel clave:    <b>${key:.2f}</b>\n"
-        f"⚡ RS Score:       <b>{rs:+.3f}</b>\n\n"
-        f"<b>TRADE SETUP:</b>\n"
-        f"  🟢 Entrada:   <b>${entry:.2f}</b>\n"
-        f"  🎯 Objetivo:  <b>${target:.2f}</b>  (+{gain_pct:.2f}%)\n"
-        f"  🛑 Stop:      <b>${stop:.2f}</b>  (-{risk_pct:.2f}%)\n"
-        f"  📐 R:R:       <b>1:{rr:.2f}</b>\n"
-        f"  📦 Qty:       <b>{qty} acciones</b>\n\n"
-        f"💼 Capital: ${equity:,.0f}"
-    )
-    tg_send(msg)
+    lines = [
+        f"🟢 ENTRADA — {ticker}",
+        "━━━━━━━━━━━━━━━━━━━",
+        f"💹 Precio:   ${price:.2f}",
+        f"🎯 Nivel:    ${key:.2f}",
+        f"⚡ RS Score: {rs:+.3f}",
+        "",
+        "TRADE SETUP:",
+        f"  🟢 Entrada:  ${entry:.2f}",
+        f"  🎯 Objetivo: ${target:.2f}  (+{gain_pct:.2f}%)",
+        f"  🛑 Stop:     ${stop:.2f}  (-{risk_pct:.2f}%)",
+        f"  📐 R:R:      1:{rr:.2f}",
+        f"  📦 Qty:      {qty} acciones",
+        "",
+        f"💼 Capital: ${equity:,.0f}",
+    ]
+    tg_send("\n".join(lines))
 
 
 def tg_close(ticker, entry, exit_price, qty, result):
     pnl_pct = (exit_price - entry) / entry * 100
     pnl_usd = (exit_price - entry) * qty
     icon    = "✅" if pnl_usd > 0 else "❌"
-    msg = (
-        f"{icon} <b>CIERRE — {ticker}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"  Entrada:    ${entry:.2f}\n"
-        f"  Salida:     <b>${exit_price:.2f}</b>\n"
-        f"  PnL:        <b>{pnl_pct:+.2f}%  (${pnl_usd:+.0f})</b>\n"
-        f"  Qty:        {qty}\n"
-        f"  Resultado:  <b>{result}</b>"
-    )
-    tg_send(msg)
+    lines = [
+        f"{icon} CIERRE — {ticker}",
+        "━━━━━━━━━━━━━━━━━━━",
+        f"Entrada:   ${entry:.2f}",
+        f"Salida:    ${exit_price:.2f}",
+        f"PnL:       {pnl_pct:+.2f}%  (${pnl_usd:+.0f})",
+        f"Qty:       {qty}",
+        f"Resultado: {result}",
+    ]
+    tg_send("\n".join(lines))
 
 
 # ── Ejecución de órdenes ──────────────────────────────────────────────────────
