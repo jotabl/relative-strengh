@@ -25,7 +25,7 @@ from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.data.enums import DataFeed
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import LimitOrderRequest
+from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
 API_KEY    = "PKAUNSXX2KN5TGHXMK7P3CFCKN"
@@ -97,8 +97,28 @@ MIN_RR         = 3.0    # ratio mínimo riesgo:recompensa
 data_client  = StockHistoricalDataClient(API_KEY, API_SECRET)
 trade_client = TradingClient(API_KEY, API_SECRET, paper=True)
 
-# Registro de setups ya notificados (evita spam)
-notified_setups: dict[str, datetime.date] = {}
+COOLDOWN_FILE = "cooldown.json"
+
+def load_cooldown() -> dict:
+    try:
+        with open(COOLDOWN_FILE) as f:
+            raw = json.load(f)
+        today = datetime.date.today()
+        # Solo conservar entradas de hoy (cooldown diario)
+        return {k: datetime.date.fromisoformat(v) for k, v in raw.items()
+                if datetime.date.fromisoformat(v) >= today}
+    except Exception:
+        return {}
+
+def save_cooldown(d: dict):
+    try:
+        with open(COOLDOWN_FILE, "w") as f:
+            json.dump({k: v.isoformat() for k, v in d.items()}, f)
+    except Exception:
+        pass
+
+# Registro de setups ya notificados (persiste en disco entre reinicios)
+notified_setups: dict[str, datetime.date] = load_cooldown()
 # Registro de trades ejecutados para seguimiento de cierre
 open_trades: dict[str, dict] = {}
 # Simulaciones virtuales de setups detectados (sin capital real)
@@ -204,49 +224,59 @@ def tg_close(ticker, entry, exit_price, qty, result):
 # ── Ejecución de órdenes ──────────────────────────────────────────────────────
 
 def place_entry(ticker, entry, stop, target, rs, key_price, quote):
-    # Validaciones del setup ANTES de cualquier llamada a la API
+    # Validaciones del setup
     risk_per = entry - stop
     if risk_per <= 0:
-        print(f"  [!] {ticker}: riesgo inválido (entry={entry:.2f} stop={stop:.2f})")
-        return
+        print(f"  [!] {ticker}: riesgo inválido"); return
     rr = (target - entry) / risk_per
     if rr < MIN_RR:
-        print(f"  [!] {ticker}: R:R={rr:.2f} < mínimo {MIN_RR} — operación rechazada")
-        return
-    target_pct = (target - entry) / entry * 100
-    if target_pct < MIN_TARGET_PCT * 100:
-        print(f"  [!] {ticker}: target +{target_pct:.1f}% < mínimo {MIN_TARGET_PCT*100:.0f}% — rechazada")
-        return
+        print(f"  [!] {ticker}: R:R={rr:.2f} < {MIN_RR} — rechazada"); return
+    if (target - entry) / entry * 100 < MIN_TARGET_PCT * 100:
+        print(f"  [!] {ticker}: target muy chico — rechazada"); return
     if quote <= stop:
-        print(f"  [!] {ticker}: precio actual ${quote:.2f} ya bajo stop ${stop:.2f} — rechazada")
-        return
+        print(f"  [!] {ticker}: precio bajo stop — rechazada"); return
 
     account   = trade_client.get_account()
     equity    = float(account.equity)
     positions = {p.symbol: p for p in trade_client.get_all_positions()}
+    open_orders = {o.symbol for o in trade_client.get_orders()
+                   if o.status.value in ("new", "partially_filled", "accepted")}
 
     if ticker in positions:
         return
-    if len(positions) >= MAX_POSITIONS:
-        print(f"  [!] Máximo de posiciones alcanzado, no se opera {ticker}")
+    if ticker in open_orders:
+        print(f"  [!] {ticker}: ya tiene orden abierta — skip")
         return
+    if len(positions) >= MAX_POSITIONS:
+        print(f"  [!] Máximo posiciones — skip {ticker}"); return
 
     buying_power = float(account.buying_power)
     risk_amt     = min(equity * MAX_RISK_PCT, buying_power * 0.9)
     qty = max(1, int(risk_amt / risk_per))
-    if qty * entry > buying_power * 0.95:
-        qty = max(1, int(buying_power * 0.95 / entry))
-    if qty * entry > buying_power:
-        print(f"  [!] {ticker}: buying power insuficiente (${buying_power:.0f}), skip")
-        return
+    if qty * quote > buying_power * 0.95:
+        qty = max(1, int(buying_power * 0.95 / quote))
+    if qty * quote > buying_power:
+        print(f"  [!] {ticker}: buying power insuficiente — skip"); return
 
     try:
-        order = trade_client.submit_order(LimitOrderRequest(
-            symbol=ticker, qty=qty, side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY,
-            limit_price=round(entry, 2),
-        ))
-        print(f"  ✅ ORDEN ENVIADA: {ticker} ×{qty} @ ${entry:.2f}")
+        # Si el precio actual ya superó el nivel de entrada → orden de mercado
+        # Si el precio aún está debajo del nivel → orden límite en la entrada
+        if quote >= entry:
+            order = trade_client.submit_order(MarketOrderRequest(
+                symbol=ticker, qty=qty, side=OrderSide.BUY,
+                time_in_force=TimeInForce.DAY,
+            ))
+            exec_price = quote
+            print(f"  ✅ MERCADO: {ticker} ×{qty} @ ~${quote:.2f} (precio ya sobre nivel)")
+        else:
+            order = trade_client.submit_order(LimitOrderRequest(
+                symbol=ticker, qty=qty, side=OrderSide.BUY,
+                time_in_force=TimeInForce.DAY,
+                limit_price=round(entry, 2),
+            ))
+            exec_price = entry
+            print(f"  ✅ LÍMITE:  {ticker} ×{qty} @ ${entry:.2f} (esperando pullback al nivel)")
+        print(f"  ✅ ORDEN ENVIADA: {ticker} ×{qty} @ ${exec_price:.2f}")
         open_trades[ticker] = {
             "entry": entry, "stop": stop, "target": target,
             "qty": qty, "order_id": str(order.id), "date": datetime.date.today(),
@@ -488,6 +518,7 @@ def render(spx_df, quotes, ticker_data, positions, account):
             today = datetime.date.today()
             if notified_setups.get(ticker) != today and setup_ok:
                 notified_setups[ticker] = today
+                save_cooldown(notified_setups)
                 tg_setup(ticker, quote, key_price, entry, target, stop, rs, rr)
                 if ticker not in sim_trades:
                     sim_trades[ticker] = {
