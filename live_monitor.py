@@ -84,7 +84,7 @@ BT_RANK = {
 
 MAX_RISK_PCT   = 0.01   # 1% del capital por trade
 MAX_POSITIONS  = 5
-RS_THRESHOLD   = 0.0   # solo acciones con fuerza relativa real (suben cuando SPY cae)
+RS_THRESHOLD   = -0.10  # umbral óptimo por backtest: mejor WR en RS <= -0.10
 TREND_MAX_DD   = 0.10   # no operar si >10% bajo máximo 60d
 NEAR_PCT       = 0.02
 STOP_BUFFER    = 0.01
