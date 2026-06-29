@@ -84,7 +84,7 @@ BT_RANK = {
 
 MAX_RISK_PCT   = 0.01   # 1% del capital por trade
 MAX_POSITIONS  = 5
-RS_THRESHOLD   = 0.5
+RS_THRESHOLD   = 0.0   # solo acciones con fuerza relativa real (suben cuando SPY cae)
 TREND_MAX_DD   = 0.10   # no operar si >10% bajo máximo 60d
 NEAR_PCT       = 0.02
 STOP_BUFFER    = 0.01
@@ -566,6 +566,12 @@ def main():
             for ticker, sim in list(sim_trades.items()):
                 price = live_quotes.get(ticker)
                 if not price:
+                    continue
+                # Marcar cuando el precio alcanzó la entrada (trade "entrado")
+                if not sim.get("filled") and price >= sim["entry"]:
+                    sim["filled"] = True
+                # Solo evaluar TP/SL si el trade ya entró
+                if not sim.get("filled"):
                     continue
                 if price >= sim["target"]:
                     tg_sim_close(ticker, sim["entry"], sim["target"], sim["target"], sim["stop"], "TP")
