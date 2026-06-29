@@ -101,6 +101,8 @@ trade_client = TradingClient(API_KEY, API_SECRET, paper=True)
 notified_setups: dict[str, datetime.date] = {}
 # Registro de trades ejecutados para seguimiento de cierre
 open_trades: dict[str, dict] = {}
+# Simulaciones virtuales de setups detectados (sin capital real)
+sim_trades: dict[str, dict] = {}
 
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -158,6 +160,27 @@ def tg_setup(ticker, price, key, entry, target, stop, rs, rr):
         f"  🎯 Objetivo: ${target:.2f}  (+{gain_pct:.2f}%)",
         f"  🛑 Stop:     ${stop:.2f}  (-{risk_pct:.2f}%)",
         f"  📐 R:R:      1:{rr:.2f}",
+    ]
+    tg_send("\n".join(lines))
+
+
+def tg_sim_close(ticker, entry, exit_price, target, stop, result):
+    pnl_pct = (exit_price - entry) / entry * 100
+    risk_pct = (entry - stop) / entry * 100
+    gain_pct = (target - entry) / entry * 100
+    icon = "✅" if result == "TP" else "❌"
+    label = "TARGET ALCANZADO" if result == "TP" else "STOP LOSS TOCADO"
+    lines = [
+        f"{icon} SIMULACION CERRADA — {ticker}",
+        "━━━━━━━━━━━━━━━━━━━",
+        f"Resultado:  {label}",
+        f"Entrada:    ${entry:.2f}",
+        f"Salida:     ${exit_price:.2f}",
+        f"P&L:        {pnl_pct:+.2f}%",
+        "",
+        "Setup original:",
+        f"  🎯 Target: ${target:.2f}  (+{gain_pct:.2f}%)",
+        f"  🛑 Stop:   ${stop:.2f}  (-{risk_pct:.2f}%)",
     ]
     tg_send("\n".join(lines))
 
@@ -444,7 +467,13 @@ def render(spx_df, quotes, ticker_data, positions, account):
                 notified_setups[ticker] = today
                 # Siempre notificar el setup detectado
                 tg_setup(ticker, quote, key_price, entry, target, stop, rs, rr)
-                # Intentar colocar orden (puede fallar si no hay capital/posiciones llenas)
+                # Registrar simulación virtual para monitorear TP/SL
+                if ticker not in sim_trades:
+                    sim_trades[ticker] = {
+                        "entry": entry, "target": target, "stop": stop,
+                        "date": today,
+                    }
+                # Intentar colocar orden real (puede fallar si no hay capital)
                 place_entry(ticker, entry, stop, target, rs, key_price, quote)
 
     print(f"\n  Próximo refresco en {INTERVAL}s  │  Ctrl+C para salir")
@@ -481,6 +510,21 @@ def main():
 
     while True:
         try:
+            # Chequear cierres de simulaciones virtuales
+            live_quotes = fetch_quote(list(sim_trades.keys())) if sim_trades else {}
+            for ticker, sim in list(sim_trades.items()):
+                price = live_quotes.get(ticker)
+                if not price:
+                    continue
+                if price >= sim["target"]:
+                    tg_sim_close(ticker, sim["entry"], sim["target"], sim["target"], sim["stop"], "TP")
+                    del sim_trades[ticker]
+                    print(f"  🎯 SIM {ticker} → TARGET ALCANZADO ${sim['target']:.2f}")
+                elif price <= sim["stop"]:
+                    tg_sim_close(ticker, sim["entry"], sim["stop"], sim["target"], sim["stop"], "SL")
+                    del sim_trades[ticker]
+                    print(f"  🛑 SIM {ticker} → STOP LOSS ${sim['stop']:.2f}")
+
             # Chequear cierres de posiciones abiertas
             current_positions = {p.symbol: p for p in trade_client.get_all_positions()}
             for ticker, trade in list(open_trades.items()):
