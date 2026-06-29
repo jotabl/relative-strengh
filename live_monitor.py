@@ -92,6 +92,7 @@ ENTRY_BUFFER   = 0.005
 KEY_LOOKBACK   = 60
 RS_LOOKBACK    = 20
 MIN_TOUCHES    = 2
+MIN_RR         = 3.0    # ratio mínimo riesgo:recompensa
 
 data_client  = StockHistoricalDataClient(API_KEY, API_SECRET)
 trade_client = TradingClient(API_KEY, API_SECRET, paper=True)
@@ -265,9 +266,20 @@ def find_resistance_levels_full(df: pd.DataFrame) -> list:
     return [(statistics.mean(c), len(c)) for c in clusters if len(c) >= MIN_TOUCHES]
 
 
-def find_next_res(levels: list, entry: float) -> float:
-    above = [(p, t) for p, t in levels if p > entry]
-    return min(above, key=lambda x: x[0])[0] if above else entry * 1.03
+def find_next_res(levels: list, entry: float, stop: float = None) -> float:
+    """Retorna la resistencia que logra R:R >= MIN_RR.
+    Si ningún nivel lo cumple, proyecta entry + MIN_RR * riesgo."""
+    above = sorted([p for p, _ in levels if p > entry])
+    if stop is not None:
+        risk = entry - stop
+        min_target = entry + MIN_RR * risk
+        # Buscar primer nivel que supere el objetivo mínimo
+        for p in above:
+            if p >= min_target:
+                return p
+        # Ningún nivel alcanza — proyectar el objetivo calculado
+        return min_target
+    return above[0] if above else entry * 1.03
 
 
 def find_key_level(df: pd.DataFrame):
@@ -421,14 +433,14 @@ def render(spx_df, quotes, ticker_data, positions, account):
             entry  = key_price * (1 + ENTRY_BUFFER)
             stop   = key_price * (1 - STOP_BUFFER)
             levels = find_resistance_levels_full(df)
-            target = find_next_res(levels, entry)
+            target = find_next_res(levels, entry, stop)
             rr     = (target - entry) / (entry - stop) if (entry - stop) > 0 else 0
             print(f"     ► {ticker}  precio=${quote:.2f}  nivel=${key_price:.2f}  "
                   f"entrada=${entry:.2f}  stop=${stop:.2f}  target=${target:.2f}  "
                   f"R:R=1:{rr:.1f}  RS={rs:+.3f}")
             # Notificar y ejecutar si no fue alertado hoy
             today = datetime.date.today()
-            if notified_setups.get(ticker) != today and rr >= 1.5:
+            if notified_setups.get(ticker) != today and rr >= MIN_RR:
                 notified_setups[ticker] = today
                 # Siempre notificar el setup detectado
                 tg_setup(ticker, quote, key_price, entry, target, stop, rs, rr)
