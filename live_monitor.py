@@ -34,52 +34,52 @@ API_SECRET = "ET3LUrxB9SN1sKtG6K5AbvqjYyH41H8AjciocFrMNLcY"
 TG_TOKEN   = "8976723197:AAGlyPd7EIVNQG_UpWAaDITnNpv13s63z3Y"
 TG_CHAT_ID = "803164602"
 
-# Top 20 — backtest 52 tickers, 365d, cooldown 10d, filtro tendencia
-# Ordenados por WR, excluidos tickers con <2 trades históricos
+# Top 20 — backtest 52 tickers, 365d, MIN_RR=3.0, soporte corregido
+# Ordenados por PnL% total (positivos, mínimo 5 trades)
 WATCHLIST = [
-    "V",     # 100% WR  +7.1%   3 trades
-    "MSFT",  # 100% WR  +3.4%   2 trades
-    "TGT",   #  83% WR +11.1%   6 trades
-    "XOM",   #  75% WR  +5.5%   4 trades
-    "CAT",   #  75% WR  +7.0%   4 trades
-    "NKE",   #  67% WR  +4.0%   3 trades
-    "INTC",  #  67% WR  +4.9%   3 trades
-    "AMZN",  #  67% WR  +4.5%   3 trades
-    "CVX",   #  62% WR  +7.1%   8 trades
-    "JPM",   #  60% WR  +5.1%   5 trades
-    "AAPL",  #  57% WR  +6.0%   7 trades
-    "MCD",   #  57% WR  +4.3%   7 trades
-    "COP",   #  50% WR  +4.8%  10 trades
-    "UNH",   #  50% WR  +2.7%   6 trades
-    "SBUX",  #  50% WR  +2.9%   6 trades
-    "GOOGL", #  50% WR  +1.6%   4 trades
-    "KO",    #  47% WR  +8.9%  15 trades
-    "COST",  #  46% WR  +7.2%  13 trades
-    "NEE",   #  44% WR  +2.9%   9 trades
-    "LLY",   #  43% WR  +2.2%   7 trades
+    "NEE",   #  50% WR  +28.5%  18 trades
+    "CVX",   #  50% WR  +26.0%  22 trades
+    "KO",    #  48% WR  +21.8%  21 trades
+    "COP",   #  40% WR  +21.8%  20 trades
+    "GE",    #  75% WR  +21.5%   8 trades
+    "JNJ",   #  39% WR  +21.3%  23 trades
+    "SBUX",  #  50% WR  +20.6%  14 trades
+    "COST",  #  53% WR  +13.8%  19 trades
+    "XOM",   #  36% WR  +13.8%  22 trades
+    "UNH",   #  33% WR  +13.7%  15 trades
+    "AXP",   #  57% WR  +15.4%   7 trades
+    "INTC",  #  60% WR  +11.1%   5 trades
+    "MCD",   #  45% WR  +10.0%  22 trades
+    "BAC",   #  36% WR   +9.0%  11 trades
+    "SLB",   #  36% WR   +9.0%  11 trades
+    "TXN",   #  36% WR   +8.3%  11 trades
+    "DE",    #  36% WR   +8.0%  11 trades
+    "PG",    #  33% WR   +4.8%  15 trades
+    "CAT",   #  40% WR   +4.5%   5 trades
+    "AAPL",  #  40% WR   +3.9%  10 trades
 ]
 
 BT_RANK = {
-    "V":     ("+7.1%",  "100%"),
-    "MSFT":  ("+3.4%",  "100%"),
-    "TGT":   ("+11.1%", " 83%"),
-    "XOM":   ("+5.5%",  " 75%"),
-    "CAT":   ("+7.0%",  " 75%"),
-    "NKE":   ("+4.0%",  " 67%"),
-    "INTC":  ("+4.9%",  " 67%"),
-    "AMZN":  ("+4.5%",  " 67%"),
-    "CVX":   ("+7.1%",  " 62%"),
-    "JPM":   ("+5.1%",  " 60%"),
-    "AAPL":  ("+6.0%",  " 57%"),
-    "MCD":   ("+4.3%",  " 57%"),
-    "COP":   ("+4.8%",  " 50%"),
-    "UNH":   ("+2.7%",  " 50%"),
-    "SBUX":  ("+2.9%",  " 50%"),
-    "GOOGL": ("+1.6%",  " 50%"),
-    "KO":    ("+8.9%",  " 47%"),
-    "COST":  ("+7.2%",  " 46%"),
-    "NEE":   ("+2.9%",  " 44%"),
-    "LLY":   ("+2.2%",  " 43%"),
+    "NEE":  ("+28.5%", " 50%"),
+    "CVX":  ("+26.0%", " 50%"),
+    "KO":   ("+21.8%", " 48%"),
+    "COP":  ("+21.8%", " 40%"),
+    "GE":   ("+21.5%", " 75%"),
+    "JNJ":  ("+21.3%", " 39%"),
+    "SBUX": ("+20.6%", " 50%"),
+    "COST": ("+13.8%", " 53%"),
+    "XOM":  ("+13.8%", " 36%"),
+    "UNH":  ("+13.7%", " 33%"),
+    "AXP":  ("+15.4%", " 57%"),
+    "INTC": ("+11.1%", " 60%"),
+    "MCD":  ("+10.0%", " 45%"),
+    "BAC":  ( "+9.0%", " 36%"),
+    "SLB":  ( "+9.0%", " 36%"),
+    "TXN":  ( "+8.3%", " 36%"),
+    "DE":   ( "+8.0%", " 36%"),
+    "PG":   ( "+4.8%", " 33%"),
+    "CAT":  ( "+4.5%", " 40%"),
+    "AAPL": ( "+3.9%", " 40%"),
 }
 
 MAX_RISK_PCT   = 0.01   # 1% del capital por trade
