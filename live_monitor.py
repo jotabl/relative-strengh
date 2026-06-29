@@ -142,6 +142,25 @@ def tg_entry(ticker, price, key, entry, target, stop, rs, rr, qty, equity):
     tg_send("\n".join(lines))
 
 
+def tg_setup(ticker, price, key, entry, target, stop, rs, rr):
+    gain_pct = (target - entry) / entry * 100
+    risk_pct = (entry - stop)  / entry * 100
+    lines = [
+        f"👁 SETUP DETECTADO — {ticker}",
+        "━━━━━━━━━━━━━━━━━━━",
+        f"💹 Precio:   ${price:.2f}",
+        f"🎯 Nivel:    ${key:.2f}",
+        f"⚡ RS Score: {rs:+.3f}",
+        "",
+        "NIVELES:",
+        f"  🟢 Entrada:  ${entry:.2f}",
+        f"  🎯 Objetivo: ${target:.2f}  (+{gain_pct:.2f}%)",
+        f"  🛑 Stop:     ${stop:.2f}  (-{risk_pct:.2f}%)",
+        f"  📐 R:R:      1:{rr:.2f}",
+    ]
+    tg_send("\n".join(lines))
+
+
 def tg_close(ticker, entry, exit_price, qty, result):
     pnl_pct = (exit_price - entry) / entry * 100
     pnl_usd = (exit_price - entry) * qty
@@ -407,10 +426,13 @@ def render(spx_df, quotes, ticker_data, positions, account):
             print(f"     ► {ticker}  precio=${quote:.2f}  nivel=${key_price:.2f}  "
                   f"entrada=${entry:.2f}  stop=${stop:.2f}  target=${target:.2f}  "
                   f"R:R=1:{rr:.1f}  RS={rs:+.3f}")
-            # Ejecutar si no fue notificado hoy
+            # Notificar y ejecutar si no fue alertado hoy
             today = datetime.date.today()
             if notified_setups.get(ticker) != today and rr >= 1.5:
                 notified_setups[ticker] = today
+                # Siempre notificar el setup detectado
+                tg_setup(ticker, quote, key_price, entry, target, stop, rs, rr)
+                # Intentar colocar orden (puede fallar si no hay capital/posiciones llenas)
                 place_entry(ticker, entry, stop, target, rs, key_price, quote)
 
     print(f"\n  Próximo refresco en {INTERVAL}s  │  Ctrl+C para salir")
@@ -443,7 +465,7 @@ def main():
     time.sleep(1)
 
     # Notificación de inicio
-    tg_send("🤖 <b>RS Scanner iniciado</b>\nMonitoreando: " + ", ".join(WATCHLIST))
+    tg_send("🤖 RS Scanner iniciado\nMonitoreando: " + ", ".join(WATCHLIST))
 
     while True:
         try:
