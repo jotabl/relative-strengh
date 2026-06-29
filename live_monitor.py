@@ -34,27 +34,58 @@ API_SECRET = "ET3LUrxB9SN1sKtG6K5AbvqjYyH41H8AjciocFrMNLcY"
 TG_TOKEN   = "8976723197:AAGlyPd7EIVNQG_UpWAaDITnNpv13s63z3Y"
 TG_CHAT_ID = "803164602"
 
+# Top 20 — backtest 52 tickers, 365d, cooldown 10d, filtro tendencia
+# Ordenados por WR, excluidos tickers con <2 trades históricos
 WATCHLIST = [
-    "COST", "XOM", "CAT", "MCD", "AAPL",
-    "V",    "JPM", "AMZN", "META", "MSFT",
+    "V",     # 100% WR  +7.1%   3 trades
+    "MSFT",  # 100% WR  +3.4%   2 trades
+    "TGT",   #  83% WR +11.1%   6 trades
+    "XOM",   #  75% WR  +5.5%   4 trades
+    "CAT",   #  75% WR  +7.0%   4 trades
+    "NKE",   #  67% WR  +4.0%   3 trades
+    "INTC",  #  67% WR  +4.9%   3 trades
+    "AMZN",  #  67% WR  +4.5%   3 trades
+    "CVX",   #  62% WR  +7.1%   8 trades
+    "JPM",   #  60% WR  +5.1%   5 trades
+    "AAPL",  #  57% WR  +6.0%   7 trades
+    "MCD",   #  57% WR  +4.3%   7 trades
+    "COP",   #  50% WR  +4.8%  10 trades
+    "UNH",   #  50% WR  +2.7%   6 trades
+    "SBUX",  #  50% WR  +2.9%   6 trades
+    "GOOGL", #  50% WR  +1.6%   4 trades
+    "KO",    #  47% WR  +8.9%  15 trades
+    "COST",  #  46% WR  +7.2%  13 trades
+    "NEE",   #  44% WR  +2.9%   9 trades
+    "LLY",   #  43% WR  +2.2%   7 trades
 ]
 
 BT_RANK = {
-    "COST": ("+19.8%", "59%"),
-    "XOM":  ("+14.7%", "78%"),
-    "CAT":  ("+7.0%",  "75%"),
-    "MCD":  ("+6.7%",  "62%"),
-    "AAPL": ("+6.0%",  "57%"),
-    "V":    ("+5.6%",  "75%"),
-    "JPM":  ("+5.1%",  "60%"),
-    "AMZN": ("+4.5%",  "67%"),
-    "META": ("+4.2%",  "60%"),
-    "MSFT": ("+3.4%",  "100%"),
+    "V":     ("+7.1%",  "100%"),
+    "MSFT":  ("+3.4%",  "100%"),
+    "TGT":   ("+11.1%", " 83%"),
+    "XOM":   ("+5.5%",  " 75%"),
+    "CAT":   ("+7.0%",  " 75%"),
+    "NKE":   ("+4.0%",  " 67%"),
+    "INTC":  ("+4.9%",  " 67%"),
+    "AMZN":  ("+4.5%",  " 67%"),
+    "CVX":   ("+7.1%",  " 62%"),
+    "JPM":   ("+5.1%",  " 60%"),
+    "AAPL":  ("+6.0%",  " 57%"),
+    "MCD":   ("+4.3%",  " 57%"),
+    "COP":   ("+4.8%",  " 50%"),
+    "UNH":   ("+2.7%",  " 50%"),
+    "SBUX":  ("+2.9%",  " 50%"),
+    "GOOGL": ("+1.6%",  " 50%"),
+    "KO":    ("+8.9%",  " 47%"),
+    "COST":  ("+7.2%",  " 46%"),
+    "NEE":   ("+2.9%",  " 44%"),
+    "LLY":   ("+2.2%",  " 43%"),
 }
 
 MAX_RISK_PCT   = 0.01   # 1% del capital por trade
 MAX_POSITIONS  = 5
 RS_THRESHOLD   = 0.5
+TREND_MAX_DD   = 0.10   # no operar si >10% bajo máximo 60d
 NEAR_PCT       = 0.02
 STOP_BUFFER    = 0.01
 ENTRY_BUFFER   = 0.005
@@ -252,6 +283,13 @@ def calc_rs(stock_df: pd.DataFrame, spx_df: pd.DataFrame) -> float:
     return float(sm / pm) if pm != 0 else 1.0
 
 
+def is_downtrend(df: pd.DataFrame) -> bool:
+    """True si el precio actual está >10% bajo el máximo de 60 días."""
+    high60  = float(df.tail(60)["high"].max())
+    current = float(df["close"].iloc[-1])
+    return (high60 - current) / high60 > TREND_MAX_DD
+
+
 def rs_label(rs: float) -> str:
     if rs < 0.0:   return "🔥 MUY FUERTE"
     if rs < 0.2:   return "🔥 FUERTE    "
@@ -261,9 +299,12 @@ def rs_label(rs: float) -> str:
     return             "❌ MUY DÉBIL "
 
 
-def setup_status(current: float, key: float, rs: float, spx_up: bool) -> str:
-    near    = abs(current - key) / key <= NEAR_PCT
-    rs_ok   = rs < RS_THRESHOLD
+def setup_status(current: float, key: float, rs: float, spx_up: bool,
+                 downtrend: bool = False) -> str:
+    near  = abs(current - key) / key <= NEAR_PCT
+    rs_ok = rs < RS_THRESHOLD
+    if downtrend:
+        return "🔴 TENDENCIA↓ "
     if spx_up and near and rs_ok:
         return "🟢 SETUP LISTO"
     if near and rs_ok:
@@ -325,31 +366,33 @@ def render(spx_df, quotes, ticker_data, positions, account):
         prev    = float(df["close"].iloc[-2])
         chg     = (quote - prev) / prev * 100
         chg_ico = "▲" if chg > 0 else "▼"
+        dtrend  = is_downtrend(df)
 
         key_price, touches = find_key_level(df)
         if key_price is None:
             dist, status = 0.0, "⚪ SIN NIVEL  "
         else:
             dist   = (quote - key_price) / key_price * 100
-            status = setup_status(quote, key_price, rs, spx_up)
+            status = setup_status(quote, key_price, rs, spx_up, dtrend)
 
         bt_pnl, bt_wr = BT_RANK.get(ticker, ("—", "—"))
-        key_str = f"${key_price:.2f}" if key_price else "  —   "
-        touches_str = f"({touches}x)" if touches else ""
+        key_str     = f"${key_price:.2f}" if key_price else "  —   "
+        touches_str = f"({touches}x)"     if touches   else ""
+        trend_tag   = " ↓10%" if dtrend else ""
 
         in_pos = "💼" if ticker in positions else "  "
         print(f"  {i:<3} {ticker:<6} ${quote:>7.2f} {chg_ico}{abs(chg):>5.2f}% "
               f"{key_str:>8}{touches_str:<5} {dist:>+5.1f}% "
-              f"{rs:>+6.2f} {rs_label(rs):<14} {status:<15} {bt_pnl:>7} {in_pos}")
+              f"{rs:>+6.2f} {rs_label(rs):<14} {status:<15} {bt_pnl:>7}{trend_tag} {in_pos}")
 
     print(f"  {'─'*74}")
 
-    # Alertas activas
+    # Alertas activas (solo sin downtrend)
     alerts = []
     for t, d, r in ticker_data:
         q = quotes.get(t, float(d["close"].iloc[-1]))
         kp, kt = find_key_level(d)
-        if kp and setup_status(q, kp, r, spx_up).startswith("🟢"):
+        if kp and not is_downtrend(d) and setup_status(q, kp, r, spx_up).startswith("🟢"):
             alerts.append((t, d, r, kp, kt))
 
     if alerts:

@@ -30,38 +30,60 @@ TICKERS = {
     "QCOM":  "Semiconductores",
     "TXN":   "Semiconductores",
     "AMAT":  "Semiconductores",
+    "INTC":  "Semiconductores",
     # Comunicaciones / Internet
     "META":  "Comunicaciones",
     "GOOGL": "Comunicaciones",
     "NFLX":  "Comunicaciones",
+    "DIS":   "Entretenimiento",
     # Consumo discrecional
     "AMZN":  "Consumo Discr.",
     "TSLA":  "Automóviles",
     "HD":    "Retail",
     "MCD":   "Restaurantes",
     "COST":  "Retail",
+    "NKE":   "Deportes",
+    "SBUX":  "Restaurantes",
+    "TGT":   "Retail",
+    # Consumo básico
+    "PG":    "Consumo Básico",
+    "KO":    "Consumo Básico",
+    "PEP":   "Consumo Básico",
+    "WMT":   "Retail",
     # Finanzas
     "JPM":   "Financiero",
     "GS":    "Financiero",
     "MS":    "Financiero",
+    "BAC":   "Financiero",
     "V":     "Pagos",
     "MA":    "Pagos",
+    "AXP":   "Pagos",
+    "BLK":   "Asset Mgmt",
     # Energía
     "XOM":   "Energía",
     "CVX":   "Energía",
     "COP":   "Energía",
+    "SLB":   "Energía",
     # Salud
     "UNH":   "Salud",
     "LLY":   "Farmacéutica",
     "ABT":   "Salud",
+    "JNJ":   "Salud",
+    "MRK":   "Farmacéutica",
     # Industriales
     "CAT":   "Industriales",
     "HON":   "Industriales",
     "GE":    "Industriales",
-    # Software empresarial
+    "DE":    "Industriales",
+    "RTX":   "Defensa",
+    # Software / Cloud
     "CRM":   "Software",
     "NOW":   "Software",
     "PANW":  "Ciberseguridad",
+    "ADBE":  "Software",
+    # Utilities / Real Estate
+    "NEE":   "Utilities",
+    "AMT":   "Real Estate",
 }
 SPX_PROXY = "SPY"
 
@@ -175,9 +197,22 @@ def find_next_res(levels, entry):
 
 # ── Motor de backtest ─────────────────────────────────────────────────────────
 
-COOLDOWN_DAYS = 10   # mínimo días entre trades del mismo ticker
+COOLDOWN_DAYS     = 10    # mínimo días entre trades del mismo ticker
+TREND_FILTER      = True  # activar/desactivar filtro de tendencia
+TREND_MAX_DD      = 0.10  # no operar si precio > 10% bajo el máximo de 60 días
 
-def backtest_ticker(ticker: str, stock_df: pd.DataFrame, spx_df: pd.DataFrame):
+
+def is_in_downtrend(hist: pd.DataFrame, lookback: int = 60, max_dd: float = 0.10) -> bool:
+    """True si el precio actual está más de max_dd% por debajo del máximo de lookback días."""
+    window   = hist.tail(lookback)
+    high_60  = float(window["high"].max())
+    current  = float(hist["close"].iloc[-1])
+    drawdown = (high_60 - current) / high_60
+    return drawdown > max_dd
+
+
+def backtest_ticker(ticker: str, stock_df: pd.DataFrame, spx_df: pd.DataFrame,
+                    trend_filter: bool = False):
     trades = []
     dates  = stock_df.index[WARMUP:]
     last_trade_date = None
@@ -192,6 +227,10 @@ def backtest_ticker(ticker: str, stock_df: pd.DataFrame, spx_df: pd.DataFrame):
         hist      = stock_df.iloc[:pos_in_df + 1]
 
         current_price = float(hist["close"].iloc[-1])
+
+        # Filtro de tendencia: no operar si está en caída >10% desde máximo 60d
+        if trend_filter and is_in_downtrend(hist, lookback=60, max_dd=TREND_MAX_DD):
+            continue
 
         # Niveles en ventana KEY_LEVEL_LOOKBACK
         levels = find_resistance_levels(hist, KEY_LEVEL_LOOKBACK, MIN_TOUCHES)
@@ -499,22 +538,76 @@ def main():
     spx_df = fetch(SPX_PROXY, total_days)
     print(f"✅ {len(spx_df)} barras")
 
-    all_trades  = []
     stock_cache = {}
+    print(f"\n  Descargando {len(TICKERS)} tickers...\n")
 
     for ticker, sector in TICKERS.items():
         print(f"  {ticker:<6} ({sector})...", end=" ", flush=True)
         try:
             stock_df = fetch(ticker, total_days)
             stock_cache[ticker] = stock_df
-            trades   = backtest_ticker(ticker, stock_df, spx_df)
-            all_trades.extend(trades)
-            print(f"✅ {len(trades)} trades")
+            print(f"✅")
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"❌ {e}")
 
-    result_df = print_results(all_trades)
-    print_key_zones(result_df, stock_cache, top_n=4)
+    # ── Pasada 1: SIN filtro de tendencia ─────────────────────────────────────
+    print(f"\n{'═'*60}")
+    print(f"  PASADA 1 — SIN filtro de tendencia (base)")
+    print(f"{'═'*60}")
+    trades_base = []
+    for ticker, sector in TICKERS.items():
+        if ticker not in stock_cache: continue
+        t = backtest_ticker(ticker, stock_cache[ticker], spx_df, trend_filter=False)
+        trades_base.extend(t)
+    df_base = print_results(trades_base)
+
+    # ── Pasada 2: CON filtro de tendencia ─────────────────────────────────────
+    print(f"\n{'═'*60}")
+    print(f"  PASADA 2 — CON filtro tendencia (no opera si >10% bajo máximo 60d)")
+    print(f"{'═'*60}")
+    trades_filt = []
+    for ticker, sector in TICKERS.items():
+        if ticker not in stock_cache: continue
+        t = backtest_ticker(ticker, stock_cache[ticker], spx_df, trend_filter=True)
+        trades_filt.extend(t)
+    df_filt = print_results(trades_filt)
+
+    # ── Comparación final ─────────────────────────────────────────────────────
+    import pandas as pd
+    b_wr  = len([x for x in trades_base if x["result"]=="WIN"]) / len(trades_base) * 100 if trades_base else 0
+    f_wr  = len([x for x in trades_filt if x["result"]=="WIN"]) / len(trades_filt) * 100 if trades_filt else 0
+    b_exp = sum(x["pnl_pct"] for x in trades_base) / len(trades_base) if trades_base else 0
+    f_exp = sum(x["pnl_pct"] for x in trades_filt) / len(trades_filt) if trades_filt else 0
+
+    print(f"\n{'═'*60}")
+    print(f"  📊 COMPARACIÓN DIRECTA")
+    print(f"{'═'*60}")
+    print(f"  {'Métrica':<25} {'Sin filtro':>12} {'Con filtro':>12}  {'Δ':>8}")
+    print(f"  {'─'*57}")
+    print(f"  {'Trades totales':<25} {len(trades_base):>12} {len(trades_filt):>12}  {len(trades_filt)-len(trades_base):>+8}")
+    print(f"  {'Win Rate':<25} {b_wr:>11.1f}% {f_wr:>11.1f}%  {f_wr-b_wr:>+7.1f}%")
+    print(f"  {'Expectancy /trade':<25} {b_exp:>11.2f}% {f_exp:>11.2f}%  {f_exp-b_exp:>+7.2f}%")
+    print(f"  {'PnL total':<25} {sum(x['pnl_pct'] for x in trades_base):>11.1f}% {sum(x['pnl_pct'] for x in trades_filt):>11.1f}%  {sum(x['pnl_pct'] for x in trades_filt)-sum(x['pnl_pct'] for x in trades_base):>+7.1f}%")
+
+    winner = "CON FILTRO ✅" if f_wr > b_wr else "SIN FILTRO"
+    print(f"\n  → Gana: {winner}")
+
+    # Tickers positivos con filtro → actualizar watchlist
+    if df_filt is not None and not df_filt.empty:
+        by_pnl = df_filt.groupby("ticker").agg(
+            trades=("pnl_pct","count"),
+            pnl=("pnl_pct","sum"),
+            wins=("result", lambda x: (x=="WIN").sum())
+        )
+        by_pnl["wr"] = by_pnl["wins"] / by_pnl["trades"] * 100
+        positives = by_pnl[by_pnl["pnl"] > 0].sort_values("wr", ascending=False)
+        print(f"\n  🏆 WATCHLIST RECOMENDADA (tickers positivos con filtro, por WR):")
+        print(f"  {'Ticker':<8} {'Trades':>6} {'WR%':>6} {'PnL%':>8}")
+        print(f"  {'─'*32}")
+        for tk, row in positives.iterrows():
+            print(f"  {tk:<8} {int(row['trades']):>6} {row['wr']:>5.0f}% {row['pnl']:>+7.1f}%")
+
+    print(f"\n{'═'*60}\n")
 
 
 if __name__ == "__main__":

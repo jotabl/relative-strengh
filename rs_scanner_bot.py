@@ -27,18 +27,12 @@ API_KEY    = "PKAUNSXX2KN5TGHXMK7P3CFCKN"
 API_SECRET = "ET3LUrxB9SN1sKtG6K5AbvqjYyH41H8AjciocFrMNLcY"
 PAPER      = True
 
-# Top 10 por backtest (365 días, cooldown 10 días)
+# Top 20 — backtest 52 tickers, 365d, cooldown 10d, filtro tendencia
 WATCHLIST = [
-    "COST",   # +19.8%  59% WR
-    "XOM",    # +14.7%  78% WR
-    "CAT",    # + 7.0%  75% WR
-    "MCD",    # + 6.7%  62% WR
-    "AAPL",   # + 6.0%  57% WR
-    "V",      # + 5.6%  75% WR
-    "JPM",    # + 5.1%  60% WR
-    "AMZN",   # + 4.5%  67% WR
-    "META",   # + 4.2%  60% WR
-    "MSFT",   # + 3.4% 100% WR
+    "V",     "MSFT",  "TGT",   "XOM",   "CAT",
+    "NKE",   "INTC",  "AMZN",  "CVX",   "JPM",
+    "AAPL",  "MCD",   "COP",   "UNH",   "SBUX",
+    "GOOGL", "KO",    "COST",  "NEE",   "LLY",
 ]
 
 # Parámetros de estrategia
