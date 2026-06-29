@@ -547,7 +547,12 @@ def main():
 
             # Chequear cierres de posiciones abiertas
             current_positions = {p.symbol: p for p in trade_client.get_all_positions()}
+            open_orders_syms  = {o.symbol for o in trade_client.get_orders()
+                                 if o.status.value in ("new", "partially_filled", "accepted")}
             for ticker, trade in list(open_trades.items()):
+                # Ignorar si todavía hay una orden abierta (límite no llenada aún)
+                if ticker in open_orders_syms:
+                    continue
                 if ticker not in current_positions:
                     # Posición cerrada (por stop o target)
                     quote = fetch_quote([ticker]).get(ticker, trade["entry"])
