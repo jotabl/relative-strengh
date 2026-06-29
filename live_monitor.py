@@ -204,6 +204,23 @@ def tg_close(ticker, entry, exit_price, qty, result):
 # ── Ejecución de órdenes ──────────────────────────────────────────────────────
 
 def place_entry(ticker, entry, stop, target, rs, key_price, quote):
+    # Validaciones del setup ANTES de cualquier llamada a la API
+    risk_per = entry - stop
+    if risk_per <= 0:
+        print(f"  [!] {ticker}: riesgo inválido (entry={entry:.2f} stop={stop:.2f})")
+        return
+    rr = (target - entry) / risk_per
+    if rr < MIN_RR:
+        print(f"  [!] {ticker}: R:R={rr:.2f} < mínimo {MIN_RR} — operación rechazada")
+        return
+    target_pct = (target - entry) / entry * 100
+    if target_pct < MIN_TARGET_PCT * 100:
+        print(f"  [!] {ticker}: target +{target_pct:.1f}% < mínimo {MIN_TARGET_PCT*100:.0f}% — rechazada")
+        return
+    if quote <= stop:
+        print(f"  [!] {ticker}: precio actual ${quote:.2f} ya bajo stop ${stop:.2f} — rechazada")
+        return
+
     account   = trade_client.get_account()
     equity    = float(account.equity)
     positions = {p.symbol: p for p in trade_client.get_all_positions()}
@@ -216,18 +233,12 @@ def place_entry(ticker, entry, stop, target, rs, key_price, quote):
 
     buying_power = float(account.buying_power)
     risk_amt     = min(equity * MAX_RISK_PCT, buying_power * 0.9)
-    risk_per     = entry - stop
-    if risk_per <= 0:
-        return
     qty = max(1, int(risk_amt / risk_per))
-    # Verificar que el costo total no supere el buying power disponible
     if qty * entry > buying_power * 0.95:
         qty = max(1, int(buying_power * 0.95 / entry))
     if qty * entry > buying_power:
         print(f"  [!] {ticker}: buying power insuficiente (${buying_power:.0f}), skip")
         return
-
-    rr = (target - entry) / risk_per
 
     try:
         order = trade_client.submit_order(LimitOrderRequest(
@@ -465,19 +476,24 @@ def render(spx_df, quotes, ticker_data, positions, account):
             print(f"     ► {ticker}  precio=${quote:.2f}  nivel=${key_price:.2f}  "
                   f"entrada=${entry:.2f}  stop=${stop:.2f}  target=${target:.2f}  "
                   f"R:R=1:{rr:.1f}  RS={rs:+.3f}")
-            # Notificar y ejecutar si no fue alertado hoy
+            # Validaciones del setup completo
+            target_pct = (target - entry) / entry * 100
+            setup_ok = (
+                rr >= MIN_RR and                        # R:R mínimo 1:3
+                target_pct >= MIN_TARGET_PCT * 100 and  # target mínimo 3%
+                quote > stop and                        # precio sobre el stop
+                quote >= key_price                      # precio sobre el soporte
+            )
+            # Notificar y ejecutar si no fue alertado hoy y setup es válido
             today = datetime.date.today()
-            if notified_setups.get(ticker) != today and rr >= MIN_RR:
+            if notified_setups.get(ticker) != today and setup_ok:
                 notified_setups[ticker] = today
-                # Siempre notificar el setup detectado
                 tg_setup(ticker, quote, key_price, entry, target, stop, rs, rr)
-                # Registrar simulación virtual (solo si precio actual es válido)
-                if ticker not in sim_trades and quote > stop:
+                if ticker not in sim_trades:
                     sim_trades[ticker] = {
                         "entry": entry, "target": target, "stop": stop,
                         "date": today,
                     }
-                # Intentar colocar orden real (puede fallar si no hay capital)
                 place_entry(ticker, entry, stop, target, rs, key_price, quote)
 
     print(f"\n  Próximo refresco en {INTERVAL}s  │  Ctrl+C para salir")
