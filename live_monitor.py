@@ -289,20 +289,22 @@ def find_resistance_levels_full(df: pd.DataFrame) -> list:
     return [(statistics.mean(c), len(c)) for c in clusters if len(c) >= MIN_TOUCHES]
 
 
+MIN_TARGET_PCT = 0.03   # target mínimo 3% desde entry
+
 def find_next_res(levels: list, entry: float, stop: float = None) -> float:
-    """Retorna la resistencia que logra R:R >= MIN_RR.
-    Si ningún nivel lo cumple, proyecta entry + MIN_RR * riesgo."""
+    """Retorna el target que logra R:R >= MIN_RR Y al menos MIN_TARGET_PCT desde entry.
+    Si ningún nivel lo cumple, proyecta el mayor entre ambos requisitos."""
     above = sorted([p for p, _ in levels if p > entry])
     if stop is not None:
         risk = entry - stop
-        min_target = entry + MIN_RR * risk
-        # Buscar primer nivel que supere el objetivo mínimo
+        min_by_rr     = entry + MIN_RR * risk
+        min_by_pct    = entry * (1 + MIN_TARGET_PCT)
+        min_target    = max(min_by_rr, min_by_pct)
         for p in above:
             if p >= min_target:
                 return p
-        # Ningún nivel alcanza — proyectar el objetivo calculado
         return min_target
-    return above[0] if above else entry * 1.03
+    return above[0] if above else entry * (1 + MIN_TARGET_PCT)
 
 
 def find_key_level(df: pd.DataFrame):
@@ -317,11 +319,11 @@ def find_key_level(df: pd.DataFrame):
             clusters.append([p])
     current = float(df["close"].iloc[-1])
     levels  = [(statistics.mean(c), len(c)) for c in clusters if len(c) >= MIN_TOUCHES]
-    # Resistencia más cercana ≥ precio actual - 2%
-    candidates = [(p, t) for p, t in levels if p >= current * 0.98]
+    # Soporte: nivel DEBAJO del precio (precio está encima, soporte aguantó)
+    candidates = [(p, t) for p, t in levels if p <= current]
     if not candidates:
         return None, None
-    key = min(candidates, key=lambda x: x[0])
+    key = max(candidates, key=lambda x: x[0])  # soporte más cercano debajo
     return key  # (price, touches)
 
 
@@ -355,7 +357,9 @@ def rs_label(rs: float) -> str:
 
 def setup_status(current: float, key: float, rs: float, spx_up: bool,
                  downtrend: bool = False) -> str:
-    near  = abs(current - key) / key <= NEAR_PCT
+    # Precio debe estar POR ENCIMA del nivel (soporte aguantó)
+    above = current >= key
+    near  = above and (current - key) / key <= NEAR_PCT
     rs_ok = rs < RS_THRESHOLD
     if downtrend:
         return "🔴 TENDENCIA↓ "
@@ -467,8 +471,8 @@ def render(spx_df, quotes, ticker_data, positions, account):
                 notified_setups[ticker] = today
                 # Siempre notificar el setup detectado
                 tg_setup(ticker, quote, key_price, entry, target, stop, rs, rr)
-                # Registrar simulación virtual para monitorear TP/SL
-                if ticker not in sim_trades:
+                # Registrar simulación virtual (solo si precio actual es válido)
+                if ticker not in sim_trades and quote > stop:
                     sim_trades[ticker] = {
                         "entry": entry, "target": target, "stop": stop,
                         "date": today,

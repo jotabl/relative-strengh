@@ -95,7 +95,8 @@ RS_THRESHOLD       = 0.5
 NEAR_PCT           = 0.02
 ENTRY_BUFFER       = 0.005
 STOP_BUFFER        = 0.01
-MIN_RR             = 1.5
+MIN_RR             = 3.0
+MIN_TARGET_PCT     = 0.03
 TOLERANCE          = 0.015
 
 # ── Período del backtest ──────────────────────────────────────────────────────
@@ -188,11 +189,16 @@ def level_held(stock_df, date_idx, level_price, lookback=5):
     return bool((recent >= floor).all())
 
 
-def find_next_res(levels, entry):
-    above = [(p, t) for p, t in levels if p > entry]
-    if not above:
-        return entry * 1.03
-    return min(above, key=lambda x: x[0])[0]
+def find_next_res(levels, entry, stop):
+    above = sorted([p for p, _ in levels if p > entry])
+    risk = entry - stop
+    min_by_rr  = entry + MIN_RR * risk
+    min_by_pct = entry * (1 + MIN_TARGET_PCT)
+    min_target = max(min_by_rr, min_by_pct)
+    for p in above:
+        if p >= min_target:
+            return p
+    return min_target
 
 
 # ── Motor de backtest ─────────────────────────────────────────────────────────
@@ -237,15 +243,16 @@ def backtest_ticker(ticker: str, stock_df: pd.DataFrame, spx_df: pd.DataFrame,
         if not levels:
             continue
 
-        # Resistencia más cercana por encima (o dentro de 2%)
-        res_candidates = [(p, t) for p, t in levels if p >= current_price * 0.98]
+        # Soporte: nivel DEBAJO del precio actual (precio lo superó y sigue encima)
+        res_candidates = [(p, t) for p, t in levels if p <= current_price]
         if not res_candidates:
             continue
-        key_price = min(res_candidates, key=lambda x: x[0])[0]
+        key_price = max(res_candidates, key=lambda x: x[0])[0]  # soporte más cercano debajo
 
         # Condiciones
         rs = calc_rs(stock_df, spx_df, date, RS_LOOKBACK)
-        near  = abs(current_price - key_price) / key_price <= NEAR_PCT
+        # Precio debe estar encima del nivel y dentro del 2%
+        near  = (current_price >= key_price) and (current_price - key_price) / key_price <= NEAR_PCT
         spx_r = spx_reboting_on(spx_df, date)
         l_h   = level_held(stock_df, date, key_price * 0.99)
         rs_ok = rs < RS_THRESHOLD
@@ -256,7 +263,7 @@ def backtest_ticker(ticker: str, stock_df: pd.DataFrame, spx_df: pd.DataFrame,
         # Setup válido → calcular trade
         entry  = key_price * (1 + ENTRY_BUFFER)
         stop   = key_price * (1 - STOP_BUFFER)
-        target = find_next_res(levels, entry)
+        target = find_next_res(levels, entry, stop)
         risk   = entry - stop
         reward = target - entry
         if risk <= 0:
