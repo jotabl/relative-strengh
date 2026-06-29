@@ -76,10 +76,15 @@ open_trades: dict[str, dict] = {}
 def tg_send(text: str):
     try:
         url  = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-        data = json.dumps({"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML"}).encode()
+        data = json.dumps({"chat_id": TG_CHAT_ID, "text": text,
+                           "parse_mode": "HTML", "disable_web_page_preview": True}).encode()
         req  = urllib.request.Request(url, data=data,
                                       headers={"Content-Type": "application/json"})
-        urllib.request.urlopen(req, timeout=5)
+        urllib.request.urlopen(req, timeout=10)
+        print(f"  [Telegram OK]")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"  [Telegram error {e.code}] {body[:120]}")
     except Exception as e:
         print(f"  [Telegram error] {e}")
 
@@ -133,11 +138,18 @@ def place_entry(ticker, entry, stop, target, rs, key_price, quote):
         print(f"  [!] Máximo de posiciones alcanzado, no se opera {ticker}")
         return
 
-    risk_amt = equity * MAX_RISK_PCT
-    risk_per = entry - stop
+    buying_power = float(account.buying_power)
+    risk_amt     = min(equity * MAX_RISK_PCT, buying_power * 0.9)
+    risk_per     = entry - stop
     if risk_per <= 0:
         return
     qty = max(1, int(risk_amt / risk_per))
+    # Verificar que el costo total no supere el buying power disponible
+    if qty * entry > buying_power * 0.95:
+        qty = max(1, int(buying_power * 0.95 / entry))
+    if qty * entry > buying_power:
+        print(f"  [!] {ticker}: buying power insuficiente (${buying_power:.0f}), skip")
+        return
 
     rr = (target - entry) / risk_per
 
