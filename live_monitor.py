@@ -25,7 +25,8 @@ from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.data.enums import DataFeed
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
+from alpaca.trading.requests import (LimitOrderRequest, MarketOrderRequest,
+                                      TrailingStopOrderRequest, StopLimitOrderRequest)
 from alpaca.trading.enums import OrderSide, TimeInForce
 
 API_KEY    = "PKAUNSXX2KN5TGHXMK7P3CFCKN"
@@ -259,15 +260,14 @@ def place_entry(ticker, entry, stop, target, rs, key_price, quote):
         print(f"  [!] {ticker}: buying power insuficiente — skip"); return
 
     try:
-        # Si el precio actual ya superó el nivel de entrada → orden de mercado
-        # Si el precio aún está debajo del nivel → orden límite en la entrada
+        # Entrada: mercado si precio ya pasó el nivel, límite si aún está debajo
         if quote >= entry:
             order = trade_client.submit_order(MarketOrderRequest(
                 symbol=ticker, qty=qty, side=OrderSide.BUY,
                 time_in_force=TimeInForce.DAY,
             ))
             exec_price = quote
-            print(f"  ✅ MERCADO: {ticker} ×{qty} @ ~${quote:.2f} (precio ya sobre nivel)")
+            print(f"  ✅ MERCADO: {ticker} ×{qty} @ ~${quote:.2f}")
         else:
             order = trade_client.submit_order(LimitOrderRequest(
                 symbol=ticker, qty=qty, side=OrderSide.BUY,
@@ -275,7 +275,20 @@ def place_entry(ticker, entry, stop, target, rs, key_price, quote):
                 limit_price=round(entry, 2),
             ))
             exec_price = entry
-            print(f"  ✅ LÍMITE:  {ticker} ×{qty} @ ${entry:.2f} (esperando pullback al nivel)")
+            print(f"  ✅ LÍMITE:  {ticker} ×{qty} @ ${entry:.2f}")
+
+        # Stop loss real en Alpaca — se ejecuta automáticamente sin depender del bot
+        try:
+            trade_client.submit_order(StopLimitOrderRequest(
+                symbol=ticker, qty=qty, side=OrderSide.SELL,
+                time_in_force=TimeInForce.GTC,
+                stop_price=round(stop * 1.001, 2),   # trigger del stop
+                limit_price=round(stop * 0.998, 2),  # precio límite de venta
+            ))
+            print(f"  🛡️  STOP LOSS colocado @ ${stop:.2f}")
+        except Exception as se:
+            print(f"  [!] Stop loss no colocado: {se}")
+
         print(f"  ✅ ORDEN ENVIADA: {ticker} ×{qty} @ ${exec_price:.2f}")
         open_trades[ticker] = {
             "entry": entry, "stop": stop, "target": target,
