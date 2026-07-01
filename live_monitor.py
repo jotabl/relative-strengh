@@ -145,8 +145,8 @@ def save_open_trades(d: dict):
 
 # Registro de setups ya notificados (persiste en disco entre reinicios)
 notified_setups: dict[str, datetime.date] = load_cooldown()
-# Registro de trades ejecutados para seguimiento de cierre (persiste en disco)
-open_trades: dict[str, dict] = load_open_trades()
+# Registro de trades ejecutados — se reconstruye desde Alpaca al arrancar
+open_trades: dict[str, dict] = {}
 # Simulaciones virtuales de setups detectados (sin capital real)
 sim_trades: dict[str, dict] = {}
 
@@ -577,6 +577,21 @@ INTERVAL = int(sys.argv[1]) if len(sys.argv) > 1 else 60
 def main():
     print("\n  Iniciando RS Live Monitor...")
     print(f"  Top 10 tickers del backtest  │  Refresco cada {INTERVAL}s\n")
+
+    # Reconstruir open_trades desde Alpaca (fuente de verdad)
+    try:
+        real_positions = {p.symbol: p for p in trade_client.get_all_positions()}
+        loaded = load_open_trades()
+        # Solo conservar trades que tienen posición real en Alpaca
+        for ticker, trade in loaded.items():
+            if ticker in real_positions:
+                open_trades[ticker] = trade
+                print(f"  📂 Posición restaurada: {ticker} entry=${trade['entry']:.2f}")
+            else:
+                print(f"  ⚠️  {ticker} en open_trades.json pero no en Alpaca — descartado")
+        save_open_trades(open_trades)
+    except Exception as e:
+        print(f"  [!] Error reconstruyendo open_trades: {e}")
 
     # Pre-cargar barras (lento la primera vez)
     print("  Descargando datos históricos...", end=" ", flush=True)
