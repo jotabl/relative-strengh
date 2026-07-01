@@ -98,14 +98,14 @@ MIN_RR         = 3.0    # ratio mínimo riesgo:recompensa
 data_client  = StockHistoricalDataClient(API_KEY, API_SECRET)
 trade_client = TradingClient(API_KEY, API_SECRET, paper=True)
 
-COOLDOWN_FILE = "cooldown.json"
+COOLDOWN_FILE   = "cooldown.json"
+OPEN_TRADES_FILE = "open_trades.json"
 
 def load_cooldown() -> dict:
     try:
         with open(COOLDOWN_FILE) as f:
             raw = json.load(f)
         today = datetime.date.today()
-        # Solo conservar entradas de hoy (cooldown diario)
         return {k: datetime.date.fromisoformat(v) for k, v in raw.items()
                 if datetime.date.fromisoformat(v) >= today}
     except Exception:
@@ -118,10 +118,35 @@ def save_cooldown(d: dict):
     except Exception:
         pass
 
+def load_open_trades() -> dict:
+    try:
+        with open(OPEN_TRADES_FILE) as f:
+            raw = json.load(f)
+        # Convertir date strings a objetos date
+        for v in raw.values():
+            if 'date' in v:
+                v['date'] = datetime.date.fromisoformat(v['date'])
+        return raw
+    except Exception:
+        return {}
+
+def save_open_trades(d: dict):
+    try:
+        out = {}
+        for k, v in d.items():
+            row = dict(v)
+            if isinstance(row.get('date'), datetime.date):
+                row['date'] = row['date'].isoformat()
+            out[k] = row
+        with open(OPEN_TRADES_FILE, "w") as f:
+            json.dump(out, f)
+    except Exception:
+        pass
+
 # Registro de setups ya notificados (persiste en disco entre reinicios)
 notified_setups: dict[str, datetime.date] = load_cooldown()
-# Registro de trades ejecutados para seguimiento de cierre
-open_trades: dict[str, dict] = {}
+# Registro de trades ejecutados para seguimiento de cierre (persiste en disco)
+open_trades: dict[str, dict] = load_open_trades()
 # Simulaciones virtuales de setups detectados (sin capital real)
 sim_trades: dict[str, dict] = {}
 
@@ -294,6 +319,7 @@ def place_entry(ticker, entry, stop, target, rs, key_price, quote):
             "entry": entry, "stop": stop, "target": target,
             "qty": qty, "order_id": str(order.id), "date": datetime.date.today(),
         }
+        save_open_trades(open_trades)
         tg_entry(ticker, quote, key_price, entry, target, stop, rs, rr, qty, equity)
     except Exception as e:
         print(f"  [!] Error orden {ticker}: {e}")
@@ -609,6 +635,7 @@ def main():
                     result = "WIN ✅" if quote >= trade["entry"] else "LOSS ❌"
                     tg_close(ticker, trade["entry"], quote, trade["qty"], result)
                     del open_trades[ticker]
+                    save_open_trades(open_trades)
                     print(f"  📤 {ticker} cerrado — {result}")
 
             # Actualizar RS con barras frescas
