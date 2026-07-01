@@ -94,7 +94,7 @@ MIN_TOUCHES        = 2
 RS_THRESHOLD       = -0.10  # umbral óptimo por backtest
 NEAR_PCT           = 0.02
 ENTRY_BUFFER       = 0.005
-STOP_BUFFER        = 0.01
+STOP_BUFFER        = 0.02   # 2% fijo desde entry (backtest: mejor PnL)
 MIN_RR             = 3.0
 MIN_TARGET_PCT     = 0.03
 TOLERANCE          = 0.015
@@ -262,7 +262,7 @@ def backtest_ticker(ticker: str, stock_df: pd.DataFrame, spx_df: pd.DataFrame,
 
         # Setup válido → calcular trade
         entry  = key_price * (1 + ENTRY_BUFFER)
-        stop   = key_price * (1 - STOP_BUFFER)
+        stop   = entry * (1 - STOP_BUFFER)   # 2% fijo desde entry real
         target = find_next_res(levels, entry, stop)
         risk   = entry - stop
         reward = target - entry

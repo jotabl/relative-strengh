@@ -88,7 +88,7 @@ MAX_POSITIONS  = 3      # máximo 3 posiciones simultáneas
 RS_THRESHOLD   = -0.10  # umbral óptimo por backtest: mejor WR en RS <= -0.10
 TREND_MAX_DD   = 0.10   # no operar si >10% bajo máximo 60d
 NEAR_PCT       = 0.02
-STOP_BUFFER    = 0.01
+STOP_BUFFER    = 0.02   # 2% fijo desde entry (backtest: mejor PnL, mismo WR que key_1pct)
 ENTRY_BUFFER   = 0.005
 KEY_LOOKBACK   = 60
 RS_LOOKBACK    = 20
@@ -544,7 +544,7 @@ def render(spx_df, quotes, ticker_data, positions, account):
         for ticker, df, rs, key_price, touches in alerts:
             quote  = quotes.get(ticker, float(df["close"].iloc[-1]))
             entry  = key_price * (1 + ENTRY_BUFFER)
-            stop   = key_price * (1 - STOP_BUFFER)
+            stop   = entry * (1 - STOP_BUFFER)   # 2% fijo desde entry real
             levels = find_resistance_levels_full(df)
             target = find_next_res(levels, entry, stop)
             rr     = (target - entry) / (entry - stop) if (entry - stop) > 0 else 0
