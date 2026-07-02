@@ -83,8 +83,7 @@ BT_RANK = {
     "AAPL": ( "+3.9%", " 40%"),
 }
 
-MAX_RISK_PCT   = 0.005  # 0.5% del capital por trade (reducido hasta tener historial)
-MAX_POSITIONS  = 3      # máximo 3 posiciones simultáneas
+MAX_RISK_PCT   = 0.005  # 0.5% del capital por trade
 RS_THRESHOLD   = -0.10  # umbral óptimo por backtest: mejor WR en RS <= -0.10
 TREND_MAX_DD   = 0.10   # no operar si >10% bajo máximo 60d
 NEAR_PCT       = 0.02
@@ -279,8 +278,6 @@ def place_entry(ticker, entry, stop, target, rs, key_price, quote):
     if ticker in open_orders:
         print(f"  [!] {ticker}: ya tiene orden abierta — skip")
         return
-    if len(positions) >= MAX_POSITIONS:
-        print(f"  [!] Máximo posiciones ({MAX_POSITIONS}) — skip {ticker}"); return
 
     buying_power = float(account.buying_power)
     risk_amt     = min(equity * MAX_RISK_PCT, buying_power * 0.9)
